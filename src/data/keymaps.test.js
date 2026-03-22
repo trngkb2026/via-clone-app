@@ -306,17 +306,94 @@ describe('デフォルト復帰の保存', () => {
   });
 
   it('キーをデフォルトに戻すとmanipulatorは0件だがmanagedFromKeysで既存を削除できる', () => {
-    // まずリマップありの状態を生成
     const remapped = { ...initNumpad, n_enter: 'KC_SPACE' };
     const gen1 = generateKarabinerConfig(remapped, 'numpad', initNumpad);
     expect(gen1.rules[0].manipulators).toHaveLength(1);
 
-    // デフォルトに戻す
     const gen2 = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
     expect(gen2.rules[0].manipulators).toHaveLength(0);
-
-    // managedFromKeysにkeypad_enterが含まれているので、
-    // sync側でこのキーの既存manipulatorを削除できる
     expect(gen2.managedFromKeys).toContain('keypad_enter|');
+  });
+});
+
+
+// =============================================================
+// 7. syncマージロジック: managedFromKeysで既存が実際に削除される
+// =============================================================
+
+// Electron/Viteのsyncハンドラと同一のマージロジックを抽出してテスト
+function mergeManipulators(newManipulators, existingManipulators, managedFromKeys) {
+  const managedSet = new Set(managedFromKeys || []);
+  const merged = [...newManipulators];
+  for (const em of existingManipulators) {
+    const key = em.from?.key_code || '';
+    const mods = em.from?.modifiers?.mandatory?.join(',') || '';
+    const fromId = `${key}|${mods}`;
+    if (!managedSet.has(fromId)) {
+      merged.push(em);
+    }
+  }
+  return merged;
+}
+
+describe('syncマージ: managedFromKeysによる既存manipulator削除', () => {
+  it('デフォルト復帰時、既存manipulatorが削除される', () => {
+    // 既存: keypad_enter→spacebar のmanipulatorがkarabiner.jsonにある
+    const existing = [
+      manip('numpad', 'keypad_enter', { key_code: 'spacebar' }),
+    ];
+
+    // アプリがデフォルトに戻した → manipulators空、managedFromKeysにkeypad_enter含む
+    const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+
+    const merged = mergeManipulators(gen.rules[0].manipulators, existing, gen.managedFromKeys);
+
+    // keypad_enterはmanagedFromKeysに含まれるので既存から削除される
+    expect(merged).toHaveLength(0);
+  });
+
+  it('アプリ管理外のmanipulatorは保護される', () => {
+    // 既存: アプリが管理しないキー（例: 別アプリが設定したcaps_lock→escape）
+    const unmanagedManip = {
+      type: 'basic',
+      conditions: [{ type: 'device_if', identifiers: [{ vendor_id: 9427, product_id: 12427 }] }],
+      from: { key_code: 'caps_lock' },
+      to: [{ key_code: 'escape' }],
+    };
+    const existing = [unmanagedManip];
+
+    const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    const merged = mergeManipulators(gen.rules[0].manipulators, existing, gen.managedFromKeys);
+
+    // caps_lockはkeyIdToKarabinerFrom.numpadに存在しないので保護される
+    expect(merged).toHaveLength(1);
+    expect(merged[0].from.key_code).toBe('caps_lock');
+  });
+
+  it('一部をデフォルト復帰、一部をリマップ、管理外は保護の混合ケース', () => {
+    const existing = [
+      manip('numpad', 'keypad_enter', { key_code: 'spacebar' }),      // アプリ管理: デフォルト復帰で削除
+      manip('numpad', 'escape', { consumer_key_code: 'dictation' }),   // アプリ管理: リマップ上書き
+      { type: 'basic',
+        conditions: [{ type: 'device_if', identifiers: [{ vendor_id: 9427, product_id: 12427 }] }],
+        from: { key_code: 'caps_lock' },
+        to: [{ key_code: 'escape' }] },                               // 管理外: 保護
+    ];
+
+    // n_enterはデフォルト、n_escはDictationにリマップ
+    const keymap = {
+      ...initNumpad,
+      n_esc: { type: 'consumer', consumer_key_code: 'dictation', label: '🎤Dict' },
+    };
+    const gen = generateKarabinerConfig(keymap, 'numpad', initNumpad);
+
+    const merged = mergeManipulators(gen.rules[0].manipulators, existing, gen.managedFromKeys);
+
+    // n_esc: 新しいmanipulatorで上書き (1件)
+    // n_enter: managedだが0件 → 既存削除
+    // caps_lock: 管理外 → 保護 (1件)
+    expect(merged).toHaveLength(2);
+    const fromKeys = merged.map(m => m.from.key_code).sort();
+    expect(fromKeys).toEqual(['caps_lock', 'escape']);
   });
 });
