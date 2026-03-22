@@ -314,6 +314,19 @@ describe('デフォルト復帰の保存', () => {
     expect(gen2.rules[0].manipulators).toHaveLength(0);
     expect(gen2.managedFromKeys).toContain('keypad_enter|');
   });
+
+  it('GUARDRAIL: generateは常にmanagedFromKeysを非空で返す', () => {
+    // どんなkeymapでもmanagedFromKeysは物理キー定義から生成されるので空にならない
+    const gen1 = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    expect(gen1.managedFromKeys.length).toBeGreaterThan(0);
+
+    const gen2 = generateKarabinerConfig(initEwin, 'ewin', initEwin);
+    expect(gen2.managedFromKeys.length).toBeGreaterThan(0);
+
+    // 壊れたkeymapを渡しても、managedFromKeysはfromMapから生成されるので影響なし
+    const gen3 = generateKarabinerConfig({}, 'numpad', initNumpad);
+    expect(gen3.managedFromKeys.length).toBeGreaterThan(0);
+  });
 });
 
 

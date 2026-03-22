@@ -124,6 +124,12 @@ function App() {
         const config = generateKarabinerConfig(keymaps[kb], kb, defaults[kb]);
         const manipulators = config.rules[0].manipulators;
         const managedFromKeys = config.managedFromKeys;
+        if (!managedFromKeys || managedFromKeys.length === 0) {
+          console.error(`GUARDRAIL: managedFromKeys is empty for ${kb}. Sync aborted to prevent silent data loss.`);
+          showToast(`⚠ 同期中止: ${kb}のmanagedFromKeysが空です`);
+          allSuccess = false;
+          continue;
+        }
         const device = devices[kb];
         const payload = { device, manipulators, managedFromKeys };
         const syncTimestamp = Date.now();

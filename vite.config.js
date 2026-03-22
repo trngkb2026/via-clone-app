@@ -49,8 +49,13 @@ export default defineConfig({
                 )
               );
 
-              // managedFromKeysはアプリが管理するすべてのfromキー（デフォルトに戻したものも含む）
-              const managedSet = new Set(managedFromKeys || []);
+              // GUARDRAIL: managedFromKeysが空なら拒否
+              if (!managedFromKeys || managedFromKeys.length === 0) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ success: false, error: 'GUARDRAIL: managedFromKeys is empty. Sync rejected.' }));
+                return;
+              }
+              const managedSet = new Set(managedFromKeys);
 
               // Merge: keep existing manipulators the app doesn't manage
               let mergedManipulators = [...manipulators];

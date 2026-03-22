@@ -59,9 +59,11 @@ ipcMain.handle('sync-karabiner', async (_event, { device, manipulators, managedF
       )
     );
 
-    // managedFromKeysはアプリが管理するすべてのfromキー（デフォルトに戻したものも含む）
-    // このリストにあるキーの既存manipulatorは削除し、ないものだけ保護する
-    const managedSet = new Set(managedFromKeys || []);
+    // GUARDRAIL: managedFromKeysが空なら拒否。空のまま通すと既存ルールが全保護され、削除が効かない
+    if (!managedFromKeys || managedFromKeys.length === 0) {
+      return { success: false, error: 'GUARDRAIL: managedFromKeys is empty. Sync rejected to prevent silent data loss.' };
+    }
+    const managedSet = new Set(managedFromKeys);
 
     // Merge: keep existing manipulators the app doesn't manage
     let mergedManipulators = [...manipulators];
