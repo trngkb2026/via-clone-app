@@ -475,11 +475,22 @@ export function generateKarabinerConfig(keymap, deviceType, defaults) {
     });
   }
 
+  // アプリが管理する全fromキーのリスト（デフォルトに戻したキーも含む）
+  // sync側で「アプリが管理するキーの既存manipulatorを削除」するために使用
+  const managedFromKeys = [];
+  for (const [keyId, fromDef] of Object.entries(fromMap)) {
+    if (!fromDef) continue;
+    const key = fromDef.key_code || '';
+    const mods = fromDef.modifiers?.mandatory?.join(',') || '';
+    managedFromKeys.push(`${key}|${mods}`);
+  }
+
   return {
     title: `${device.name} Custom Layout`,
     rules: [{
       description: `${device.name} - VIA Configurator`,
       manipulators
-    }]
+    }],
+    managedFromKeys
   };
 }

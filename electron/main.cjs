@@ -34,7 +34,7 @@ function createWindow() {
 }
 
 // Sync: directly update karabiner.json rules for immediate effect
-ipcMain.handle('sync-karabiner', async (_event, { device, manipulators }) => {
+ipcMain.handle('sync-karabiner', async (_event, { device, manipulators, managedFromKeys }) => {
   try {
     if (!fs.existsSync(KARABINER_CONFIG)) {
       return { success: false, error: 'karabiner.json not found' };
@@ -59,12 +59,11 @@ ipcMain.handle('sync-karabiner', async (_event, { device, manipulators }) => {
       )
     );
 
-    // Collect from-keys managed by the app for merge
-    const appFromKeys = new Set(manipulators.map(m => {
-      const key = m.from?.key_code || '';
-      const mods = m.from?.modifiers?.mandatory?.join(',') || '';
-      return `${key}|${mods}`;
-    }));
+    // GUARDRAIL: managedFromKeysが空なら拒否。空のまま通すと既存ルールが全保護され、削除が効かない
+    if (!managedFromKeys || managedFromKeys.length === 0) {
+      return { success: false, error: 'GUARDRAIL: managedFromKeys is empty. Sync rejected to prevent silent data loss.' };
+    }
+    const managedSet = new Set(managedFromKeys);
 
     // Merge: keep existing manipulators the app doesn't manage
     let mergedManipulators = [...manipulators];
@@ -74,7 +73,7 @@ ipcMain.handle('sync-karabiner', async (_event, { device, manipulators }) => {
         const key = em.from?.key_code || '';
         const mods = em.from?.modifiers?.mandatory?.join(',') || '';
         const fromId = `${key}|${mods}`;
-        if (!appFromKeys.has(fromId)) {
+        if (!managedSet.has(fromId)) {
           mergedManipulators.push(em);
         }
       }

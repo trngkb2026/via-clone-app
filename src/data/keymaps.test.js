@@ -241,9 +241,10 @@ describe('実機karabiner.json互換', () => {
 // 4. generate: デフォルト値は出力しない
 // =============================================================
 describe('generate: 不要なmanipulatorを生成しない', () => {
-  it('全キーがデフォルトならmanipulatorsは空', () => {
+  it('全キーがデフォルトならmanipulatorsは空だがmanagedFromKeysは返る', () => {
     const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
     expect(gen.rules[0].manipulators).toHaveLength(0);
+    expect(gen.managedFromKeys.length).toBeGreaterThan(0);
   });
 
   it('変更したキーだけmanipulatorが生成される', () => {
@@ -286,5 +287,126 @@ describe('parse: デバイス分離', () => {
 
     expect(Object.keys(numpad).length).toBe(REAL_TENBT03_MANIPULATORS.length);
     expect(Object.keys(ewin).length).toBe(REAL_EWIN_MANIPULATORS.length);
+  });
+});
+
+
+// =============================================================
+// 6. デフォルト復帰時にmanipulatorが削除される
+// =============================================================
+describe('デフォルト復帰の保存', () => {
+  it('managedFromKeysにはfromDef非nullの全キーが含まれる', () => {
+    const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    const managed = gen.managedFromKeys;
+
+    // n_fn, n_00, n_hzはfromDefがnullなので含まれない
+    expect(managed).toContain('escape|');
+    expect(managed).toContain('keypad_enter|');
+    expect(managed).toContain('8|shift'); // n_lp (shift+8)
+  });
+
+  it('キーをデフォルトに戻すとmanipulatorは0件だがmanagedFromKeysで既存を削除できる', () => {
+    const remapped = { ...initNumpad, n_enter: 'KC_SPACE' };
+    const gen1 = generateKarabinerConfig(remapped, 'numpad', initNumpad);
+    expect(gen1.rules[0].manipulators).toHaveLength(1);
+
+    const gen2 = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    expect(gen2.rules[0].manipulators).toHaveLength(0);
+    expect(gen2.managedFromKeys).toContain('keypad_enter|');
+  });
+
+  it('GUARDRAIL: generateは常にmanagedFromKeysを非空で返す', () => {
+    // どんなkeymapでもmanagedFromKeysは物理キー定義から生成されるので空にならない
+    const gen1 = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    expect(gen1.managedFromKeys.length).toBeGreaterThan(0);
+
+    const gen2 = generateKarabinerConfig(initEwin, 'ewin', initEwin);
+    expect(gen2.managedFromKeys.length).toBeGreaterThan(0);
+
+    // 壊れたkeymapを渡しても、managedFromKeysはfromMapから生成されるので影響なし
+    const gen3 = generateKarabinerConfig({}, 'numpad', initNumpad);
+    expect(gen3.managedFromKeys.length).toBeGreaterThan(0);
+  });
+});
+
+
+// =============================================================
+// 7. syncマージロジック: managedFromKeysで既存が実際に削除される
+// =============================================================
+
+// Electron/Viteのsyncハンドラと同一のマージロジックを抽出してテスト
+function mergeManipulators(newManipulators, existingManipulators, managedFromKeys) {
+  const managedSet = new Set(managedFromKeys || []);
+  const merged = [...newManipulators];
+  for (const em of existingManipulators) {
+    const key = em.from?.key_code || '';
+    const mods = em.from?.modifiers?.mandatory?.join(',') || '';
+    const fromId = `${key}|${mods}`;
+    if (!managedSet.has(fromId)) {
+      merged.push(em);
+    }
+  }
+  return merged;
+}
+
+describe('syncマージ: managedFromKeysによる既存manipulator削除', () => {
+  it('デフォルト復帰時、既存manipulatorが削除される', () => {
+    // 既存: keypad_enter→spacebar のmanipulatorがkarabiner.jsonにある
+    const existing = [
+      manip('numpad', 'keypad_enter', { key_code: 'spacebar' }),
+    ];
+
+    // アプリがデフォルトに戻した → manipulators空、managedFromKeysにkeypad_enter含む
+    const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+
+    const merged = mergeManipulators(gen.rules[0].manipulators, existing, gen.managedFromKeys);
+
+    // keypad_enterはmanagedFromKeysに含まれるので既存から削除される
+    expect(merged).toHaveLength(0);
+  });
+
+  it('アプリ管理外のmanipulatorは保護される', () => {
+    // 既存: アプリが管理しないキー（例: 別アプリが設定したcaps_lock→escape）
+    const unmanagedManip = {
+      type: 'basic',
+      conditions: [{ type: 'device_if', identifiers: [{ vendor_id: 9427, product_id: 12427 }] }],
+      from: { key_code: 'caps_lock' },
+      to: [{ key_code: 'escape' }],
+    };
+    const existing = [unmanagedManip];
+
+    const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    const merged = mergeManipulators(gen.rules[0].manipulators, existing, gen.managedFromKeys);
+
+    // caps_lockはkeyIdToKarabinerFrom.numpadに存在しないので保護される
+    expect(merged).toHaveLength(1);
+    expect(merged[0].from.key_code).toBe('caps_lock');
+  });
+
+  it('一部をデフォルト復帰、一部をリマップ、管理外は保護の混合ケース', () => {
+    const existing = [
+      manip('numpad', 'keypad_enter', { key_code: 'spacebar' }),      // アプリ管理: デフォルト復帰で削除
+      manip('numpad', 'escape', { consumer_key_code: 'dictation' }),   // アプリ管理: リマップ上書き
+      { type: 'basic',
+        conditions: [{ type: 'device_if', identifiers: [{ vendor_id: 9427, product_id: 12427 }] }],
+        from: { key_code: 'caps_lock' },
+        to: [{ key_code: 'escape' }] },                               // 管理外: 保護
+    ];
+
+    // n_enterはデフォルト、n_escはDictationにリマップ
+    const keymap = {
+      ...initNumpad,
+      n_esc: { type: 'consumer', consumer_key_code: 'dictation', label: '🎤Dict' },
+    };
+    const gen = generateKarabinerConfig(keymap, 'numpad', initNumpad);
+
+    const merged = mergeManipulators(gen.rules[0].manipulators, existing, gen.managedFromKeys);
+
+    // n_esc: 新しいmanipulatorで上書き (1件)
+    // n_enter: managedだが0件 → 既存削除
+    // caps_lock: 管理外 → 保護 (1件)
+    expect(merged).toHaveLength(2);
+    const fromKeys = merged.map(m => m.from.key_code).sort();
+    expect(fromKeys).toEqual(['caps_lock', 'escape']);
   });
 });

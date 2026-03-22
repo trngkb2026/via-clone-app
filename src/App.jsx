@@ -67,8 +67,8 @@ function App() {
   const [keyCaptureMode, setKeyCaptureMode] = useState(false);
   const [capturedEvents, setCapturedEvents] = useState([]);
   const [keymaps, setKeymaps] = useState({
-    numpad: { ...initNumpad, ...currentNumpadConfig },
-    ewin: { ...initEwin, ...currentEwinConfig },
+    numpad: { ...initNumpad },
+    ewin: { ...initEwin },
   });
   const initialLoadDone = useRef(false);
   const syncEnabled = useRef(false);
@@ -95,15 +95,21 @@ function App() {
           const numpadConfig = parseKarabinerConfig(result.data, 'numpad');
           const ewinConfig = parseKarabinerConfig(result.data, 'ewin');
           setKeymaps({
-            numpad: { ...initNumpad, ...currentNumpadConfig, ...numpadConfig },
-            ewin: { ...initEwin, ...currentEwinConfig, ...ewinConfig },
+            numpad: { ...initNumpad, ...numpadConfig },
+            ewin: { ...initEwin, ...ewinConfig },
           });
         }
-      } catch { /* fallback to hardcoded currentConfig */ }
+      } catch {
+        // karabiner.json読み取り失敗時のみハードコード値をフォールバックとして使用
+        setKeymaps({
+          numpad: { ...initNumpad, ...currentNumpadConfig },
+          ewin: { ...initEwin, ...currentEwinConfig },
+        });
+      }
       initialLoadDone.current = true;
-      // syncEnabledを次のレンダーサイクルまで遅延させ、
-      // setKeymapsによるauto-sync発火を完全に防ぐ
-      requestAnimationFrame(() => { syncEnabled.current = true; });
+      // setKeymapsのstate更新→再レンダー→useEffect実行を確実に通過させてからsyncを有効化
+      // requestAnimationFrameだけではReactのバッチ更新と競合するリスクがあるため、十分な遅延を確保
+      setTimeout(() => { syncEnabled.current = true; }, 300);
     };
     loadConfig();
   }, []);
@@ -117,9 +123,15 @@ function App() {
       for (const kb of ['numpad', 'ewin']) {
         const config = generateKarabinerConfig(keymaps[kb], kb, defaults[kb]);
         const manipulators = config.rules[0].manipulators;
-        if (manipulators.length === 0) continue;
+        const managedFromKeys = config.managedFromKeys;
+        if (!managedFromKeys || managedFromKeys.length === 0) {
+          console.error(`GUARDRAIL: managedFromKeys is empty for ${kb}. Sync aborted to prevent silent data loss.`);
+          showToast(`⚠ 同期中止: ${kb}のmanagedFromKeysが空です`);
+          allSuccess = false;
+          continue;
+        }
         const device = devices[kb];
-        const payload = { device, manipulators };
+        const payload = { device, manipulators, managedFromKeys };
         const syncTimestamp = Date.now();
         try {
           let result;
