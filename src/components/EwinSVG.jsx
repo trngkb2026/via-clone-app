@@ -1,9 +1,9 @@
 import KeyNode from './KeyNode';
 import { ewinKeys } from '../data/keymaps';
 
-export default function EwinSVG({ keymap, selectedKey, onKeyClick }) {
+export default function EwinSVG({ keymap, selectedKey, onKeyClick, defaults }) {
   return (
-    <svg viewBox="0 0 800 550" className="w-full h-full max-h-[55vh] drop-shadow-2xl" onClick={() => onKeyClick(null)}>
+    <svg viewBox="0 0 800 550" className="w-full h-full max-h-[calc(100vh-80px)] drop-shadow-2xl" onClick={() => onKeyClick(null)}>
       <defs>
         <linearGradient id="rgb-glow" gradientUnits="userSpaceOnUse" x1="50" y1="0" x2="750" y2="0">
           <stop offset="0%" stopColor="#ff1493" />
@@ -40,7 +40,16 @@ export default function EwinSVG({ keymap, selectedKey, onKeyClick }) {
         <rect x="95" y="40" width="35" height="20" fill="#111" stroke="#22ff88" strokeWidth="2" rx="6" />
         <rect x="50" y="115" width="40" height="45" fill="#e61938" stroke="#900" strokeWidth="1" rx="8" />
       </g>
-      {ewinKeys.map(k => <KeyNode key={k.id} k={k} isSel={selectedKey === k.id} mappedCode={keymap[k.id]} onKeyClick={onKeyClick} />)}
+      {ewinKeys.map(k => (
+        <KeyNode
+          key={k.id}
+          k={k}
+          isSel={selectedKey === k.id}
+          mappedCode={keymap[k.id]}
+          onKeyClick={onKeyClick}
+          isModified={defaults && JSON.stringify(keymap[k.id]) !== JSON.stringify(defaults[k.id])}
+        />
+      ))}
     </svg>
   );
 }
