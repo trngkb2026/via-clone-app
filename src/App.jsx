@@ -123,9 +123,9 @@ function App() {
       for (const kb of ['numpad', 'ewin']) {
         const config = generateKarabinerConfig(keymaps[kb], kb, defaults[kb]);
         const manipulators = config.rules[0].manipulators;
-        if (manipulators.length === 0) continue;
+        const managedFromKeys = config.managedFromKeys;
         const device = devices[kb];
-        const payload = { device, manipulators };
+        const payload = { device, manipulators, managedFromKeys };
         const syncTimestamp = Date.now();
         try {
           let result;

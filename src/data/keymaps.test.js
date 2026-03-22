@@ -241,9 +241,10 @@ describe('実機karabiner.json互換', () => {
 // 4. generate: デフォルト値は出力しない
 // =============================================================
 describe('generate: 不要なmanipulatorを生成しない', () => {
-  it('全キーがデフォルトならmanipulatorsは空', () => {
+  it('全キーがデフォルトならmanipulatorsは空だがmanagedFromKeysは返る', () => {
     const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
     expect(gen.rules[0].manipulators).toHaveLength(0);
+    expect(gen.managedFromKeys.length).toBeGreaterThan(0);
   });
 
   it('変更したキーだけmanipulatorが生成される', () => {
@@ -286,5 +287,36 @@ describe('parse: デバイス分離', () => {
 
     expect(Object.keys(numpad).length).toBe(REAL_TENBT03_MANIPULATORS.length);
     expect(Object.keys(ewin).length).toBe(REAL_EWIN_MANIPULATORS.length);
+  });
+});
+
+
+// =============================================================
+// 6. デフォルト復帰時にmanipulatorが削除される
+// =============================================================
+describe('デフォルト復帰の保存', () => {
+  it('managedFromKeysにはfromDef非nullの全キーが含まれる', () => {
+    const gen = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    const managed = gen.managedFromKeys;
+
+    // n_fn, n_00, n_hzはfromDefがnullなので含まれない
+    expect(managed).toContain('escape|');
+    expect(managed).toContain('keypad_enter|');
+    expect(managed).toContain('8|shift'); // n_lp (shift+8)
+  });
+
+  it('キーをデフォルトに戻すとmanipulatorは0件だがmanagedFromKeysで既存を削除できる', () => {
+    // まずリマップありの状態を生成
+    const remapped = { ...initNumpad, n_enter: 'KC_SPACE' };
+    const gen1 = generateKarabinerConfig(remapped, 'numpad', initNumpad);
+    expect(gen1.rules[0].manipulators).toHaveLength(1);
+
+    // デフォルトに戻す
+    const gen2 = generateKarabinerConfig(initNumpad, 'numpad', initNumpad);
+    expect(gen2.rules[0].manipulators).toHaveLength(0);
+
+    // managedFromKeysにkeypad_enterが含まれているので、
+    // sync側でこのキーの既存manipulatorを削除できる
+    expect(gen2.managedFromKeys).toContain('keypad_enter|');
   });
 });

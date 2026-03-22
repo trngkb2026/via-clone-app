@@ -29,7 +29,7 @@ export default defineConfig({
           req.on('data', chunk => { body += chunk; });
           req.on('end', () => {
             try {
-              const { device, manipulators } = JSON.parse(body);
+              const { device, manipulators, managedFromKeys } = JSON.parse(body);
               if (!fs.existsSync(KARABINER_CONFIG)) {
                 res.end(JSON.stringify({ success: false, error: 'karabiner.json not found' }));
                 return;
@@ -49,12 +49,8 @@ export default defineConfig({
                 )
               );
 
-              // Collect from-keys managed by the app for merge
-              const appFromKeys = new Set(manipulators.map(m => {
-                const key = m.from?.key_code || '';
-                const mods = m.from?.modifiers?.mandatory?.join(',') || '';
-                return `${key}|${mods}`;
-              }));
+              // managedFromKeysはアプリが管理するすべてのfromキー（デフォルトに戻したものも含む）
+              const managedSet = new Set(managedFromKeys || []);
 
               // Merge: keep existing manipulators the app doesn't manage
               let mergedManipulators = [...manipulators];
@@ -64,7 +60,7 @@ export default defineConfig({
                   const key = em.from?.key_code || '';
                   const mods = em.from?.modifiers?.mandatory?.join(',') || '';
                   const fromId = `${key}|${mods}`;
-                  if (!appFromKeys.has(fromId)) {
+                  if (!managedSet.has(fromId)) {
                     mergedManipulators.push(em);
                   }
                 }

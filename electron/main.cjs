@@ -34,7 +34,7 @@ function createWindow() {
 }
 
 // Sync: directly update karabiner.json rules for immediate effect
-ipcMain.handle('sync-karabiner', async (_event, { device, manipulators }) => {
+ipcMain.handle('sync-karabiner', async (_event, { device, manipulators, managedFromKeys }) => {
   try {
     if (!fs.existsSync(KARABINER_CONFIG)) {
       return { success: false, error: 'karabiner.json not found' };
@@ -59,12 +59,9 @@ ipcMain.handle('sync-karabiner', async (_event, { device, manipulators }) => {
       )
     );
 
-    // Collect from-keys managed by the app for merge
-    const appFromKeys = new Set(manipulators.map(m => {
-      const key = m.from?.key_code || '';
-      const mods = m.from?.modifiers?.mandatory?.join(',') || '';
-      return `${key}|${mods}`;
-    }));
+    // managedFromKeysはアプリが管理するすべてのfromキー（デフォルトに戻したものも含む）
+    // このリストにあるキーの既存manipulatorは削除し、ないものだけ保護する
+    const managedSet = new Set(managedFromKeys || []);
 
     // Merge: keep existing manipulators the app doesn't manage
     let mergedManipulators = [...manipulators];
@@ -74,7 +71,7 @@ ipcMain.handle('sync-karabiner', async (_event, { device, manipulators }) => {
         const key = em.from?.key_code || '';
         const mods = em.from?.modifiers?.mandatory?.join(',') || '';
         const fromId = `${key}|${mods}`;
-        if (!appFromKeys.has(fromId)) {
+        if (!managedSet.has(fromId)) {
           mergedManipulators.push(em);
         }
       }
